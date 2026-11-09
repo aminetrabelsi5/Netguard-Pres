@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetGuard · Objective 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* =========================================================
+     THEME — colors from the original NetGuard deck
+     ========================================================= */
+  :root {
+    --bg: #0d0f0e;
+    --card: rgba(24, 27, 25, .85);
+    --line: rgba(255, 255, 255, .10);
+    --fg: #f2f2ee;
+    --muted: #a8a8a0;
+    --lime: #b8c93a;
+    --green: #2f9e72;
+    --blue: #4db8e8;
+    --orange: #f0965a;
+    --red: #e85454;
+    --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%; overflow: hidden; color: var(--fg);
+    background: radial-gradient(ellipse at 50% 40%, #141816 0%, var(--bg) 70%);
+    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Two background canvases that cross-fade when the style changes */
+  canvas.bg { position: fixed; inset: 0; z-index: 0; display: block; opacity: 0; transition: opacity 1.4s ease; }
+  canvas.bg.on { opacity: 1; }
+
+  /* ---------- Fixed 1600×900 stage, scaled to the screen ---------- */
+  .stage {
+    position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; z-index: 1;
+    transform: translate(-50%, -50%) scale(var(--s, 1));
+  }
+
+  /* =========================================================
+     SLIDE TRANSITIONS — each slide picks one with data-fx
+     ========================================================= */
+  .slide {
+    position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    transition: opacity .8s ease, transform 1s cubic-bezier(.2, .8, .2, 1),
+                filter .8s ease, clip-path 1.1s cubic-bezier(.7, 0, .2, 1);
+  }
+  .slide[data-fx="zoom"]   { transform: scale(1.14); filter: blur(10px); }
+  .slide[data-fx="slide"]  { transform: translateX(180px); }
+  .slide[data-fx="flip"]   { transform: perspective(1800px) rotateY(-24deg); transform-origin: left center; }
+  .slide[data-fx="rise"]   { transform: translateY(140px); }
+  .slide[data-fx="blur"]   { filter: blur(22px); transform: scale(.96); }
+  .slide[data-fx="wipe"]   { clip-path: circle(0% at 72% 50%); }
+  .slide[data-fx="wipe"].active    { clip-path: circle(150% at 72% 50%); }
+  .slide[data-fx="curtain"]        { clip-path: inset(0 100% 0 0); }
+  .slide[data-fx="curtain"].active { clip-path: inset(0 0 0 0); }
+  .slide[data-fx="glitch"].active  { animation: glitch-in .7s steps(1) both; }
+  /* the active slide always ends in its normal state (stronger selector than the effects above) */
+  .stage .slide.active { pointer-events: auto; opacity: 1; transform: none; filter: none; }
+  @keyframes glitch-in {
+    0%   { transform: translate(-30px, 0) skewX(8deg); filter: hue-rotate(90deg) saturate(3); clip-path: inset(10% 0 60% 0); }
+    15%  { transform: translate(24px, 0); clip-path: inset(50% 0 20% 0); }
+    30%  { transform: translate(-12px, 0) skewX(-6deg); filter: hue-rotate(-60deg); clip-path: inset(0 0 80% 0); }
+    45%  { transform: translate(8px, 0); clip-path: inset(30% 0 30% 0); filter: none; }
+    60%  { transform: translate(-4px, 0); clip-path: inset(0 0 0 0); }
+    100% { transform: none; clip-path: inset(0 0 0 0); }
+  }
+
+  /* =========================================================
+     ELEMENT ENTRANCES — class "a" + a variant, --d = delay (s)
+     ========================================================= */
+  .a {
+    opacity: 0; transform: translateY(26px);
+    transition: opacity .7s ease, transform .9s cubic-bezier(.2, .8, .2, 1), filter .7s ease;
+  }
+  .a.left   { transform: translateX(-60px); }
+  .a.right  { transform: translateX(60px); }
+  .a.zoom   { transform: scale(.9); filter: blur(8px); }
+  .a.pop    { transform: scale(.3); transition-timing-function: ease, cubic-bezier(.34, 1.56, .64, 1), ease; }
+  .a.blur   { filter: blur(14px); transform: translateY(10px) scale(1.04); }
+  .a.tilt   { transform: translateY(110px) rotate(-5deg); }
+  .a.tilt.r { transform: translateY(110px) rotate(5deg); }
+  .a.flip3d { transform: perspective(1200px) rotateY(70deg); }
+  .a.flip3d.r { transform: perspective(1200px) rotateY(-70deg); }
+  .a.drop   { transform: translateY(-160px); transition-timing-function: ease, cubic-bezier(.34, 1.4, .64, 1), ease; }
+  .a.flipx  { transform: perspective(900px) rotateX(-75deg); transform-origin: top center; }
+  .slide.active .a {
+    opacity: 1; transform: none; filter: none;
+    transition-delay: calc(var(--d, 0) * 1s);
+  }
+
+  /* Titles split into letters (class "chars") */
+  .chars .c {
+    display: inline-block; opacity: 0; transform: translateY(.5em) rotateX(-90deg);
+    transition: opacity .5s ease, transform .6s cubic-bezier(.2, .8, .2, 1);
+  }
+  .slide.active .chars .c { opacity: 1; transform: none; transition-delay: var(--cd); }
+
+  /* ---------- Header ---------- */
+  .eyebrow {
+    position: absolute; left: 70px; top: 34px;
+    font-family: var(--mono); font-size: 14px; font-weight: 700; letter-spacing: .18em;
+    color: var(--lime); text-transform: uppercase;
+  }
+  .title { position: absolute; left: 70px; top: 56px; font-size: 40px; font-weight: 800; letter-spacing: -.02em; }
+  .brand {
+    position: fixed; right: 24px; top: 18px; z-index: 10; font-family: var(--mono); font-size: 12px;
+    color: var(--muted); opacity: .7; transition: opacity .4s;
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 18px;
+    backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  }
+
+  /* ---------- Phones (screenshots include the phone frame) ---------- */
+  .phone { position: absolute; cursor: zoom-in; }
+  .phone img { display: block; width: 100%; height: auto; filter: drop-shadow(0 28px 36px rgba(0, 0, 0, .7)); }
+  .phone::after {
+    content: ""; position: absolute; left: 15%; right: 15%; bottom: -18px; height: 26px;
+    background: radial-gradient(ellipse, rgba(47, 158, 114, .5), transparent 70%); filter: blur(6px);
+  }
+  .phone .scan {   /* a light bar sweeps the screen once when the phone appears */
+    position: absolute; inset: 1.5% 3%; border-radius: 9% / 4.5%; overflow: hidden; pointer-events: none;
+  }
+  .phone .scan::before {
+    content: ""; position: absolute; left: 0; right: 0; height: 18%; top: -20%;
+    background: linear-gradient(180deg, transparent, rgba(184, 201, 58, .28), transparent);
+  }
+  .slide.active .phone .scan::before { animation: scan 1.5s ease-in-out both; animation-delay: calc(var(--d, 0) * 1s + .6s); }
+  @keyframes scan { from { top: -20%; } to { top: 105%; } }
+
+  /* ---------- Short text next to phones ---------- */
+  .block { position: absolute; }
+  .block h3 { font-size: 27px; font-weight: 700; color: var(--lime); margin-bottom: 16px; }
+  .block ul { list-style: none; }
+  .block li { font-size: 19px; line-height: 1.4; margin: 0 0 12px; padding-left: 22px; position: relative; }
+  .block li::before {
+    content: ""; position: absolute; left: 0; top: .5em; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 10px var(--green);
+  }
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    padding: 2px 8px; border-radius: 6px; vertical-align: 2px;
+  }
+  .badge.lime { background: var(--lime); color: #1c1c1c; }
+  .badge.grey { background: rgba(255, 255, 255, .16); color: var(--fg); }
+
+  /* =========================================================
+     SLIDE 1 — title
+     ========================================================= */
+  .s1 .eyebrow { top: 150px; left: 90px; }
+  .s1 h1 {
+    position: absolute; left: 86px; top: 180px; font-size: 128px; font-weight: 800; letter-spacing: -.04em;
+    display: flex; align-items: center; gap: 24px;
+  }
+  .s1 h1 svg { width: 100px; height: 100px; flex-shrink: 0; }
+  .shield-path { stroke-dasharray: 400; stroke-dashoffset: 400; transition: stroke-dashoffset 1.6s ease .5s; }
+  .slide.active .shield-path { stroke-dashoffset: 0; }
+  .s1 .tag { position: absolute; left: 90px; top: 360px; font-size: 30px; font-weight: 600; line-height: 1.35; }
+  .s1 .desc { position: absolute; left: 90px; top: 455px; width: 880px; font-size: 21px; line-height: 1.5; color: var(--muted); }
+  .agenda { position: absolute; left: 90px; top: 545px; display: grid; gap: 14px; }
+  .agenda div { display: flex; align-items: center; gap: 16px; font-size: 22px; }
+  .agenda i {
+    font-style: normal; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--green); color: #fff; font-weight: 800; font-size: 19px; box-shadow: 0 0 18px rgba(47, 158, 114, .6);
+  }
+  .agenda span { color: var(--muted); }
+  .team { position: absolute; left: 90px; top: 760px; font-size: 18px; line-height: 1.6; }
+  .team span { color: var(--muted); }
+
+  /* =========================================================
+     SLIDE 2 — use case diagram alone, as big as possible
+     ========================================================= */
+  .diagram {
+    position: absolute; left: 216px; top: 12px; width: 1168px; padding: 10px;
+    background: #fff; border-radius: 14px; cursor: zoom-in;
+    box-shadow: 0 30px 70px rgba(0, 0, 0, .6), 0 0 0 1px rgba(184, 201, 58, .25);
+  }
+  .diagram img { display: block; width: 100%; }
+
+  /* =========================================================
+     SLIDE 7 — navigation map
+     ========================================================= */
+  .map-svg { position: absolute; inset: 0; width: 1600px; height: 900px; overflow: visible; }
+  .map-svg .base { fill: none; stroke: rgba(255, 255, 255, .18); stroke-width: 2; }
+  .map-svg .flow { fill: none; stroke-width: 2.5; stroke-dasharray: 6 12; animation: dash 1s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -18; } }
+  .map-svg text { fill: var(--muted); font-size: 16px; font-family: Inter, sans-serif; }
+  .node {
+    position: absolute; border-radius: 14px; border: 2px solid var(--lime); background: var(--card);
+    display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+  }
+  .node b { font-size: 22px; }
+  .node small { font-size: 15px; color: var(--muted); margin-top: 4px; }
+  .node.teal { border-color: var(--green); }
+  .node.blue { border-color: var(--blue); }
+  .node.orange { border-color: var(--orange); }
+  .bar-box {
+    position: absolute; left: 100px; top: 400px; width: 1400px; height: 200px; border-radius: 20px;
+    border: 2px dashed rgba(47, 158, 114, .6); background: rgba(47, 158, 114, .06);
+  }
+  .bar-box span {
+    position: absolute; left: 24px; top: 14px; font-family: var(--mono); font-size: 14px; letter-spacing: .14em;
+    color: var(--green); font-weight: 700;
+  }
+
+  /* =========================================================
+     SLIDES 8–11 — prototype flows
+     ========================================================= */
+  .label { position: absolute; width: 215px; top: 430px; }
+  .label h3 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+  .label p { font-size: 18px; line-height: 1.4; color: var(--muted); }
+  .label.orange h3 { color: var(--orange); }
+  .label.green h3  { color: var(--green); }
+  .label.lime h3   { color: var(--lime); }
+  .step {
+    position: absolute; left: 685px; top: 400px; width: 230px; padding: 18px 14px; text-align: center;
+    border: 2px solid var(--orange); border-radius: 16px; background: var(--card);
+    font-size: 20px; font-weight: 700; line-height: 1.3;
+  }
+  .step small { display: block; font-size: 15px; font-weight: 500; color: var(--muted); margin-top: 5px; }
+  .tap { position: absolute; right: -13px; top: -13px; width: 26px; height: 26px; border-radius: 50%; background: var(--orange); }
+  .tap::before, .tap::after {
+    content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--orange);
+    animation: ripple 1.8s ease-out infinite;
+  }
+  .tap::after { animation-delay: .9s; }
+  @keyframes ripple { from { transform: scale(1); opacity: .9; } to { transform: scale(3.2); opacity: 0; } }
+  .flowline {
+    position: absolute; left: 668px; top: 545px; width: 262px; height: 3px;
+    background: repeating-linear-gradient(90deg, var(--orange) 0 12px, transparent 12px 24px);
+    background-size: 24px 3px; animation: flow .7s linear infinite;
+  }
+  .flowline::after {
+    content: ""; position: absolute; right: -4px; top: -8px;
+    border-left: 16px solid var(--orange); border-top: 9px solid transparent; border-bottom: 9px solid transparent;
+  }
+  @keyframes flow { to { background-position: 24px 0; } }
+
+  /* =========================================================
+     SLIDE 12 — ergonomic criteria
+     ========================================================= */
+  .crit { position: absolute; width: 345px; height: 280px; padding: 26px; display: flex; flex-direction: column; }
+  .crit .head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+  .crit .n {
+    width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+    background: rgba(184, 201, 58, .15); color: var(--lime); font-weight: 800; font-size: 19px;
+  }
+  .crit h4 { font-size: 23px; line-height: 1.2; }
+  .pill { align-self: flex-start; font-size: 15px; font-weight: 700; padding: 5px 14px; border-radius: 999px; margin-bottom: 16px; }
+  .pill.ok   { background: rgba(47, 158, 114, .2);  color: #5fd3a2; border: 1px solid rgba(47, 158, 114, .6); }
+  .pill.part { background: rgba(240, 150, 90, .18); color: var(--orange); border: 1px solid rgba(240, 150, 90, .6); }
+  .crit p { font-size: 18px; line-height: 1.45; color: var(--muted); }
+  .crit.partly { border-color: rgba(240, 150, 90, .45); }
+  .score { position: absolute; right: 70px; top: 58px; display: flex; gap: 12px; }
+  .score span { font-size: 17px; font-weight: 700; padding: 9px 16px; border-radius: 999px; margin: 0; }
+
+  /* =========================================================
+     Interface
+     ========================================================= */
+  .progress {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0; z-index: 10;
+    background: linear-gradient(90deg, var(--green), var(--lime)); transition: width .5s ease;
+    box-shadow: 0 0 12px var(--lime);
+  }
+  .nav {
+    position: fixed; right: 22px; bottom: 18px; z-index: 10; display: flex; gap: 12px; align-items: center;
+    font-family: var(--mono); font-size: 14px; color: var(--muted);
+  }
+  .nav b { color: var(--fg); }
+  .nav button {
+    width: 42px; height: 42px; border-radius: 50%; cursor: pointer; font-size: 20px; color: var(--fg);
+    background: rgba(13, 15, 14, .7); border: 1px solid rgba(255, 255, 255, .15);
+  }
+  .nav button:hover { background: rgba(184, 201, 58, .25); border-color: var(--lime); }
+  .zoom-view {
+    position: fixed; inset: 0; z-index: 30; background: rgba(5, 6, 6, .94); display: grid; place-items: center;
+    opacity: 0; pointer-events: none; transition: opacity .3s; cursor: zoom-out;
+  }
+  .zoom-view img { max-width: 96vw; max-height: 94vh; transform: scale(.94); transition: transform .35s ease; }
+  .zoom-view.diagram-mode img { background: #fff; border-radius: 10px; padding: 10px; }
+  .zoom-view.open { opacity: 1; pointer-events: auto; }
+  .zoom-view.open img { transform: none; }
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="brand">NetGuard · Objective 3</div>
+
+<div class="stage" id="stage">
+
+  <!-- ===================== 1 · TITLE ===================== -->
+  <section class="slide s1" data-fx="wipe" data-bg="network" data-hub="0.8,0.5" data-mood="scan">
+    <p class="eyebrow a" style="--d:.3">Objective 3 · Mobile Dev Project · SUP'COM</p>
+    <h1 class="a blur" style="--d:.5">
+      <svg viewBox="0 0 100 100" fill="none" aria-hidden="true">
+        <path class="shield-path" d="M50 6 L86 20 V48 C86 72 70 88 50 95 C30 88 14 72 14 48 V20 Z"
+              stroke="#b8c93a" stroke-width="6" stroke-linejoin="round"/>
+        <path class="shield-path" d="M33 50 L45 62 L68 38" stroke="#2f9e72" stroke-width="7"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      NetGuard
+    </h1>
+    <p class="tag a" style="--d:1.0">
+      <span style="color:var(--lime)">Know what's connected.</span>
+      <span style="color:var(--blue)">Understand what's happening.</span><br>
+      Protect your network.
+    </p>
+    <p class="desc a" style="--d:1.25">A Flutter app + a Python backend that watch the home Wi-Fi: devices, alerts, traffic and network health.</p>
+    <div class="agenda">
+      <div class="a left" style="--d:1.5"><i>1</i><b>Use case diagram</b><span>· who does what</span></div>
+      <div class="a left" style="--d:1.65"><i>2</i><b>Mockups</b><span>· real screens of the app</span></div>
+      <div class="a left" style="--d:1.8"><i>3</i><b>Prototype</b><span>· the working app + ergonomic check</span></div>
+    </div>
+    <p class="team a" style="--d:2.1">
+      Salem Essid · Fedi Jlassi · Hajer Kammoun · Mahdi Maati · Mohamed Amine Trabelsi<br>
+      <span>Teacher: Takwa Omri</span>
+    </p>
+    <div class="phone a tilt" style="--d:.8; left:1140px; top:48px; width:380px"><img src="img/dashboard.webp" alt="NetGuard dashboard screen"><div class="scan"></div></div>
+  </section>
+
+  <!-- ===================== 2 · USE CASE (alone) ===================== -->
+  <section class="slide" data-fx="zoom" data-bg="blueprint">
+    <div class="diagram a zoom" style="--d:.3" data-zoom="img/use_case_diagram.webp">
+      <img src="img/use_case_diagram.webp" alt="NetGuard UML use case diagram">
+    </div>
+  </section>
+
+  <!-- ===================== 3 · GETTING STARTED ===================== -->
+  <section class="slide" data-fx="slide" data-bg="wifi" data-hub="0.5,0.95">
+    <p class="eyebrow a" style="--d:.1">02 · Mockups · real screens of the app</p>
+    <h2 class="title chars" style="--d:.2">Getting started</h2>
+    <div class="phone a tilt" style="--d:.35; left:120px; top:122px; width:358px"><img src="img/setup.webp" alt="Setup screen"><div class="scan"></div></div>
+    <div class="block a right" style="--d:.8; left:510px; top:380px; width:260px">
+      <h3>Setup</h3>
+      <ul><li>Enter the PC address</li><li>Test, then Save</li><li>Local addresses only</li></ul>
+    </div>
+    <div class="phone a tilt r" style="--d:.55; left:800px; top:122px; width:358px"><img src="img/dashboard.webp" alt="Dashboard screen"><div class="scan"></div></div>
+    <div class="block a right" style="--d:1.0; left:1190px; top:380px; width:300px">
+      <h3>Dashboard</h3>
+      <ul><li>Answer in seconds</li><li>Online + unknown devices</li><li>Health, speed, Scan now</li></ul>
+    </div>
+  </section>
+
+  <!-- ===================== 4 · DEVICES ===================== -->
+  <section class="slide" data-fx="flip" data-bg="network" data-hub="0.4,0.5" data-mood="scan">
+    <p class="eyebrow a" style="--d:.1">02 · Mockups · real screens of the app</p>
+    <h2 class="title a left" style="--d:.2">Discover: who is on my Wi-Fi?</h2>
+    <div class="phone a flip3d" style="--d:.4; left:120px; top:122px; width:358px"><img src="img/devices.webp" alt="Devices screen"><div class="scan"></div></div>
+    <div class="block a" style="--d:.9; left:510px; top:380px; width:260px">
+      <h3>Devices</h3>
+      <ul><li>Search: name, IP, vendor</li><li>Filters: All / Unknown / Online</li><li>Known / Unknown badges</li></ul>
+    </div>
+    <div class="phone a flip3d r" style="--d:.65; left:800px; top:122px; width:358px"><img src="img/device_detail.webp" alt="Device detail screen"><div class="scan"></div></div>
+    <div class="block a" style="--d:1.1; left:1190px; top:380px; width:300px">
+      <h3>Device detail</h3>
+      <ul><li>Rename, pick a category</li><li>"I know this device" switch</li><li>Vendor, MAC, history, traffic</li></ul>
+    </div>
+  </section>
+
+  <!-- ===================== 5 · TRAFFIC & ALERTS ===================== -->
+  <section class="slide" data-fx="rise" data-bg="traffic">
+    <p class="eyebrow a" style="--d:.1">02 · Mockups · real screens of the app</p>
+    <h2 class="title chars" style="--d:.2">Understand and protect</h2>
+    <div class="phone a left" style="--d:.35; left:120px; top:122px; width:358px"><img src="img/traffic.webp" alt="Traffic screen"><div class="scan"></div></div>
+    <div class="block a zoom" style="--d:.8; left:510px; top:380px; width:270px">
+      <h3>Traffic</h3>
+      <ul><li>Live speed <span class="badge lime">MEASURED</span></li><li>Top users <span class="badge grey">SIMULATED</span></li></ul>
+    </div>
+    <div class="phone a right" style="--d:.55; left:800px; top:122px; width:358px"><img src="img/alerts.webp" alt="Alerts screen"><div class="scan"></div></div>
+    <div class="block a zoom" style="--d:1.0; left:1190px; top:380px; width:300px">
+      <h3>Alerts</h3>
+      <ul><li>Plain-language messages</li><li>Trust / Keep watching</li><li>Badge counts new alerts</li></ul>
+    </div>
+  </section>
+
+  <!-- ===================== 6 · HEALTH ===================== -->
+  <section class="slide" data-fx="blur" data-bg="ecg">
+    <p class="eyebrow a" style="--d:.1">02 · Mockups · real screens of the app</p>
+    <h2 class="title a blur" style="--d:.2">Network health</h2>
+    <div class="phone a drop" style="--d:.35; left:120px; top:122px; width:358px"><img src="img/health.webp" alt="Health screen"><div class="scan"></div></div>
+    <div class="block a left" style="--d:.9; left:510px; top:380px; width:260px">
+      <h3>Health score</h3>
+      <ul><li>Score /100 + a label</li><li>Fact + possible cause</li></ul>
+    </div>
+    <div class="phone a drop" style="--d:.6; left:800px; top:122px; width:358px"><img src="img/health_score.webp" alt="Health score details screen"><div class="scan"></div></div>
+    <div class="block a left" style="--d:1.1; left:1190px; top:380px; width:300px">
+      <h3>Score details</h3>
+      <ul><li>4 parts with points</li><li>Total = sum, no black box</li><li>Ping router + internet</li></ul>
+    </div>
+  </section>
+
+  <!-- ===================== 7 · NAVIGATION MAP ===================== -->
+  <section class="slide" data-fx="curtain" data-bg="hexgrid">
+    <p class="eyebrow a" style="--d:.1">03 · Navigation</p>
+    <h2 class="title chars" style="--d:.2">How the user moves through the app</h2>
+
+    <div class="bar-box a zoom" style="--d:.9"><span>BOTTOM NAVIGATION · always visible</span></div>
+
+    <svg class="map-svg" viewBox="0 0 1600 900" aria-hidden="true">
+      <defs>
+        <marker id="ah-lime" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#b8c93a"/></marker>
+        <marker id="ah-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2f9e72"/></marker>
+        <marker id="ah-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#4db8e8"/></marker>
+        <marker id="ah-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#f0965a"/></marker>
+      </defs>
+      <g class="a" style="--d:.6">
+        <path class="base" d="M580,250 H1012"/><path class="flow" d="M580,250 H1012" stroke="#b8c93a" marker-end="url(#ah-lime)"/>
+        <text x="796" y="236" text-anchor="middle">Test + Save</text>
+      </g>
+      <g class="a" style="--d:.75">
+        <path class="base" d="M1020,292 H588"/><path class="flow" d="M1020,292 H588" stroke="#a8a8a0" marker-end="url(#ah-lime)"/>
+        <text x="796" y="320" text-anchor="middle">settings icon</text>
+      </g>
+      <g class="a" style="--d:.85"><path class="flow" d="M1180,318 V392" stroke="#2f9e72" marker-end="url(#ah-green)"/></g>
+      <g class="a" style="--d:1.5">
+        <path class="base" d="M520,562 V692"/><path class="flow" d="M520,562 V692" stroke="#4db8e8" marker-end="url(#ah-blue)"/>
+        <text x="534" y="650">tap a device</text>
+      </g>
+      <g class="a" style="--d:1.65">
+        <path class="base" d="M1020,562 V692"/><path class="flow" d="M1020,562 V692" stroke="#f0965a" marker-end="url(#ah-orange)"/>
+      </g>
+      <g class="a" style="--d:1.8">
+        <path class="base" d="M1380,700 V650 H1120 V570"/><path class="flow" d="M1380,700 V650 H1120 V570" stroke="#f0965a" marker-end="url(#ah-orange)"/>
+        <text x="1250" y="638" text-anchor="middle">tap the notification</text>
+      </g>
+    </svg>
+
+    <div class="node a pop" style="--d:.35; left:260px; top:220px; width:320px; height:100px"><b>Setup</b><small>enter the PC address</small></div>
+    <div class="node a pop" style="--d:.5;  left:1020px; top:220px; width:320px; height:100px"><b>Dashboard</b><small>first screen</small></div>
+    <div class="node teal a drop" style="--d:1.0;  left:130px;  top:465px; width:240px; height:92px"><b>Dashboard</b></div>
+    <div class="node teal a drop" style="--d:1.08; left:400px;  top:465px; width:240px; height:92px"><b>Devices</b></div>
+    <div class="node teal a drop" style="--d:1.16; left:670px;  top:465px; width:240px; height:92px"><b>Traffic</b></div>
+    <div class="node orange a drop" style="--d:1.24; left:940px; top:465px; width:240px; height:92px"><b>Alerts</b></div>
+    <div class="node teal a drop" style="--d:1.32; left:1210px; top:465px; width:240px; height:92px"><b>Health</b></div>
+    <div class="node blue a pop" style="--d:1.6; left:370px; top:700px; width:300px; height:100px"><b>Device detail</b><small>rename · category · trust</small></div>
+    <div class="node orange a pop" style="--d:1.75; left:870px; top:700px; width:300px; height:100px"><b>Trust / Keep watching</b><small>on each new alert</small></div>
+    <div class="node orange a pop" style="--d:1.9; left:1230px; top:700px; width:300px; height:100px"><b>Android notification</b><small>new alert</small></div>
+  </section>
+
+  <!-- ===================== 8 · CONNECT ===================== -->
+  <section class="slide" data-fx="slide" data-bg="binary">
+    <p class="eyebrow a" style="--d:.1">04 · Prototype · the working app</p>
+    <h2 class="title a left" style="--d:.2">Connecting to the backend</h2>
+    <div class="label orange a left" style="--d:.7; left:60px"><h3>Wrong address</h3><p>Internet addresses are refused</p></div>
+    <div class="phone a left" style="--d:.35; left:295px; top:122px; width:358px"><img src="img/setup_error.webp" alt="Setup screen with an error"><div class="scan"></div></div>
+    <div class="step a pop" style="--d:1.0">Type the local address<small>then "Test connection"</small><span class="tap"></span></div>
+    <div class="flowline a" style="--d:1.2"></div>
+    <div class="phone a right" style="--d:1.35; left:947px; top:122px; width:358px"><img src="img/setup_connected.webp" alt="Setup screen connected"><div class="scan"></div></div>
+    <div class="label green a right" style="--d:1.7; left:1335px"><h3>Connected</h3><p>Save unlocks after a good test</p></div>
+  </section>
+
+  <!-- ===================== 9 · UNKNOWN DEVICE 1/3 ===================== -->
+  <section class="slide" data-fx="glitch" data-bg="network" data-hub="0.5,0.86" data-mood="alert">
+    <p class="eyebrow a" style="--d:.1">04 · Prototype · the working app</p>
+    <h2 class="title a" style="--d:.2">An unknown device joins (1/3)</h2>
+    <div class="label lime a left" style="--d:.7; left:60px"><h3>Notification</h3><p>Shown even outside the app</p></div>
+    <div class="phone a flip3d" style="--d:.35; left:295px; top:122px; width:358px"><img src="img/notifications.webp" alt="Android notification"><div class="scan"></div></div>
+    <div class="step a pop" style="--d:1.0">Tap the notification<span class="tap"></span></div>
+    <div class="flowline a" style="--d:1.2"></div>
+    <div class="phone a flip3d r" style="--d:1.35; left:947px; top:122px; width:358px"><img src="img/alerts.webp" alt="Alerts tab"><div class="scan"></div></div>
+    <div class="label lime a right" style="--d:1.7; left:1335px"><h3>Alerts tab</h3><p>Explains it in plain words</p></div>
+  </section>
+
+  <!-- ===================== 10 · UNKNOWN DEVICE 2/3 ===================== -->
+  <section class="slide" data-fx="flip" data-bg="network" data-hub="0.5,0.86" data-mood="alert">
+    <p class="eyebrow a" style="--d:.1">04 · Prototype · the working app</p>
+    <h2 class="title chars" style="--d:.2">An unknown device joins (2/3)</h2>
+    <div class="label orange a left" style="--d:.7; left:60px"><h3>New alert</h3><p>Two choices under each alert</p></div>
+    <div class="phone a tilt" style="--d:.35; left:295px; top:122px; width:358px"><img src="img/alerts.webp" alt="New alert"><div class="scan"></div></div>
+    <div class="step a pop" style="--d:1.0">Tap "Trust"<span class="tap"></span></div>
+    <div class="flowline a" style="--d:1.2"></div>
+    <div class="phone a tilt r" style="--d:1.35; left:947px; top:122px; width:358px"><img src="img/alert_trusted.webp" alt="Alert marked as trusted"><div class="scan"></div></div>
+    <div class="label green a right" style="--d:1.7; left:1335px"><h3>Trusted</h3><p>Confirmed instantly</p></div>
+  </section>
+
+  <!-- ===================== 11 · UNKNOWN DEVICE 3/3 ===================== -->
+  <section class="slide" data-fx="zoom" data-bg="network" data-hub="0.5,0.86" data-mood="trusted">
+    <p class="eyebrow a" style="--d:.1">04 · Prototype · the working app</p>
+    <h2 class="title a blur" style="--d:.2">An unknown device joins (3/3)</h2>
+    <div class="label green a left" style="--d:.7; left:60px"><h3>Trusted alert</h3><p>"Open device" link below</p></div>
+    <div class="phone a drop" style="--d:.35; left:295px; top:122px; width:358px"><img src="img/alert_trusted.webp" alt="Trusted alert"><div class="scan"></div></div>
+    <div class="step a pop" style="--d:1.0">Open the device<span class="tap"></span></div>
+    <div class="flowline a" style="--d:1.2"></div>
+    <div class="phone a drop" style="--d:1.35; left:947px; top:122px; width:358px"><img src="img/device_known.webp" alt="Device marked as known"><div class="scan"></div></div>
+    <div class="label green a right" style="--d:1.7; left:1335px"><h3>Device known</h3><p>Known badge on: no more alerts</p></div>
+  </section>
+
+  <!-- ===================== 12 · ERGONOMICS ===================== -->
+  <section class="slide" data-fx="rise" data-bg="shield">
+    <p class="eyebrow a" style="--d:.1">05 · Ergonomic evaluation (Bastien &amp; Scapin)</p>
+    <h2 class="title chars" style="--d:.2">8 criteria, checked on the real app</h2>
+    <div class="score">
+      <span class="pill ok a pop" style="--d:2.0">6 respected</span>
+      <span class="pill part a pop" style="--d:2.15">2 partly</span>
+    </div>
+    <div class="crit card a flipx" style="--d:.4; left:70px; top:180px">
+      <div class="head"><span class="n">1</span><h4>Guidance</h4></div>
+      <span class="pill ok">Respected</span><p>Hints on Setup, section titles, "Scan done" message</p></div>
+    <div class="crit card a flipx" style="--d:.5; left:439px; top:180px">
+      <div class="head"><span class="n">2</span><h4>Workload</h4></div>
+      <span class="pill ok">Respected</span><p>Dashboard readable in seconds; search and filters</p></div>
+    <div class="crit card a flipx" style="--d:.6; left:808px; top:180px">
+      <div class="head"><span class="n">3</span><h4>Explicit control</h4></div>
+      <span class="pill ok">Respected</span><p>Nothing changes without a tap; Save only after a test</p></div>
+    <div class="crit card partly a flipx" style="--d:.7; left:1177px; top:180px">
+      <div class="head"><span class="n">4</span><h4>Adaptability</h4></div>
+      <span class="pill part">Partly</span><p>Rename and categories, but English only, dark theme only</p></div>
+    <div class="crit card a flipx" style="--d:.9; left:70px; top:490px">
+      <div class="head"><span class="n">5</span><h4>Error management</h4></div>
+      <span class="pill ok">Respected</span><p>Local-address check, plain errors, offline banner</p></div>
+    <div class="crit card a flipx" style="--d:1.0; left:439px; top:490px">
+      <div class="head"><span class="n">6</span><h4>Consistency</h4></div>
+      <span class="pill ok">Respected</span><p>Same cards, badges and bottom bar on every tab</p></div>
+    <div class="crit card a flipx" style="--d:1.1; left:808px; top:490px">
+      <div class="head"><span class="n">7</span><h4>Significance of codes</h4></div>
+      <span class="pill ok">Respected</span><p>Green = known, orange = unknown, red = offline</p></div>
+    <div class="crit card partly a flipx" style="--d:1.2; left:1177px; top:490px">
+      <div class="head"><span class="n">8</span><h4>Compatibility</h4></div>
+      <span class="pill part">Partly</span><p>Plain words and Android patterns, but no French yet</p></div>
+  </section>
+</div>
+
+<div class="nav" title="← → navigate · F full screen · click a picture to enlarge">
+  <button id="prev" aria-label="Previous slide">‹</button><span id="counter"><b>1</b> / 12</span><button id="next" aria-label="Next slide">›</button>
+</div>
+<div class="zoom-view" id="zoomView"><img alt="Enlarged picture"></div>
+
+<script>
+/* =====================================================================
+   DYNAMIC BACKGROUNDS
+   Each slide chooses one with data-bg:
+     network   – router + devices + data packets + radar waves
+                 (data-hub="x,y", data-mood="scan|alert|trusted")
+     blueprint – moving UML blueprint grid with floating use-case ovals
+     wifi      – Wi-Fi signal waves from emitters
+     traffic   – live speed charts scrolling across the screen
+     ecg       – heartbeat monitor line (network health)
+     hexgrid   – honeycomb that lights up in waves
+     shield    – honeycomb in green with a protective pulse
+     binary    – falling 0/1 data streams
+   ===================================================================== */
+const C = {
+  green: [47, 158, 114], lime: [184, 201, 58], blue: [77, 184, 232],
+  orange: [240, 150, 90], red: [232, 84, 84], grey: [120, 122, 116]
+};
+const rgba = (c, a) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const mix = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+const rand = (a, b) => a + Math.random() * (b - a);
+let W = innerWidth, H = innerHeight, dpr = 1;
+const mouse = { x: 0, y: 0, sx: 0, sy: 0 };
+
+const MODES = {
+
+  /* ---------------- NETWORK ---------------- */
+  network(ctx) {
+    let nodes = [], packets = [], rings = [], alarms = [], lastRing = -1e9, mood = 'scan';
+    const hub = { x: null, y: null, tx: .5, ty: .5 };
+    const intr = { rx: .12, ry: .3, a: 0, ta: 0, col: C.orange.slice(), tcol: C.orange, flash: 0, last: 0 };
+    const M = {
+      scan:    { ring: C.lime,   every: 3400, speed: 5,   pk: .15 },
+      alert:   { ring: C.orange, every: 1600, speed: 7,   pk: .3 },
+      trusted: { ring: C.green,  every: 2800, speed: 5,   pk: .18 },
+    };
+    const col = nd => nd.type === 'known' ? C.green : nd.type === 'unknown' ? C.orange : C.grey;
+    return {
+      resize() {
+        nodes = []; let tries = 0;
+        const n = Math.max(16, Math.min(34, Math.round(W * H / 42000)));
+        while (nodes.length < n && tries++ < 3000) {
+          const x = rand(.04, .96) * W, y = rand(.06, .94) * H;
+          if (nodes.some(o => Math.hypot(o.bx - x, o.by - y) < Math.min(W, H) * .11)) continue;
+          const r = Math.random();
+          nodes.push({ bx: x, by: y, x, y, type: r < .72 ? 'known' : r < .9 ? 'unknown' : 'offline',
+            size: rand(2.6, 4.6), ph: rand(0, 6.28), sp: rand(.6, 1.4), flash: 0, depth: rand(.3, 1) });
+        }
+      },
+      config(slide) {
+        const [x, y] = (slide.dataset.hub || '.5,.5').split(',').map(Number);
+        hub.tx = x; hub.ty = y;
+        if (hub.x === null) { hub.x = x * W; hub.y = y * H; }
+        mood = slide.dataset.mood || 'scan';
+        intr.ta = mood === 'scan' ? 0 : 1;
+        intr.tcol = mood === 'trusted' ? C.green : C.orange;
+        lastRing = -1e9;
+      },
+      draw(t) {
+        const m = M[mood];
+        ctx.clearRect(0, 0, W, H);
+        hub.x += (hub.tx * W - hub.x) * .035; hub.y += (hub.ty * H - hub.y) * .035;
+        for (const nd of nodes) {
+          nd.x = nd.bx + Math.sin(t * .00025 * nd.sp + nd.ph) * 14 + mouse.sx * 18 * nd.depth;
+          nd.y = nd.by + Math.cos(t * .0002 * nd.sp + nd.ph) * 10 + mouse.sy * 12 * nd.depth;
+        }
+        intr.a += (intr.ta - intr.a) * .03; intr.col = mix(intr.col, intr.tcol, .03);
+        const ix = intr.rx * W, iy = intr.ry * H;
+
+        ctx.lineWidth = 1;
+        for (const nd of nodes) {
+          ctx.strokeStyle = rgba(col(nd), nd.type === 'offline' ? .05 : .09);
+          ctx.beginPath(); ctx.moveTo(hub.x, hub.y); ctx.lineTo(nd.x, nd.y); ctx.stroke();
+        }
+        if (intr.a > .01) {
+          ctx.setLineDash([5, 7]); ctx.strokeStyle = rgba(intr.col, .4 * intr.a);
+          ctx.beginPath(); ctx.moveTo(hub.x, hub.y); ctx.lineTo(ix, iy); ctx.stroke(); ctx.setLineDash([]);
+        }
+        // radar waves
+        if (t - lastRing > m.every) { rings.push({ r: 0, c: m.ring }); lastRing = t; }
+        const maxR = Math.hypot(W, H) * .75;
+        for (let i = rings.length - 1; i >= 0; i--) {
+          const rg = rings[i], prev = rg.r; rg.r += m.speed;
+          const a = 1 - rg.r / maxR;
+          if (a <= 0) { rings.splice(i, 1); continue; }
+          ctx.strokeStyle = rgba(rg.c, .22 * a); ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(hub.x, hub.y, rg.r, 0, 6.283); ctx.stroke();
+          for (const nd of nodes) { const d = Math.hypot(nd.x - hub.x, nd.y - hub.y); if (d > prev && d <= rg.r) nd.flash = 1; }
+        }
+        // packets
+        if (Math.random() < m.pk) {
+          const nd = nodes[(Math.random() * nodes.length) | 0];
+          if (nd && nd.type !== 'offline') packets.push({ nd, p: 0, up: Math.random() < .5, v: rand(.006, .014) });
+        }
+        if (intr.a > .5 && Math.random() < .06) packets.push({ nd: null, p: 0, up: Math.random() < .5, v: rand(.008, .016) });
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = packets.length - 1; i >= 0; i--) {
+          const pk = packets[i]; pk.p += pk.v;
+          if (pk.p >= 1) { packets.splice(i, 1); continue; }
+          const tx = pk.nd ? pk.nd.x : ix, ty = pk.nd ? pk.nd.y : iy, f = pk.up ? pk.p : 1 - pk.p;
+          const x = hub.x + (tx - hub.x) * f, y = hub.y + (ty - hub.y) * f;
+          const c = pk.nd ? (pk.nd.type === 'known' ? C.lime : C.orange) : intr.col;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, 7);
+          g.addColorStop(0, rgba(c, .9)); g.addColorStop(1, rgba(c, 0));
+          ctx.fillStyle = g; ctx.fillRect(x - 7, y - 7, 14, 14);
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        // devices
+        for (const nd of nodes) {
+          const c = col(nd); nd.flash *= .96;
+          if (nd.type === 'unknown') {
+            ctx.strokeStyle = rgba(c, .25); ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.arc(nd.x, nd.y, 8 + (Math.sin(t * .003 + nd.ph) + 1) * 5, 0, 6.283); ctx.stroke();
+          }
+          ctx.fillStyle = rgba(c, .45 + nd.flash * .55);
+          ctx.beginPath(); ctx.arc(nd.x, nd.y, nd.size + nd.flash * 2.5, 0, 6.283); ctx.fill();
+        }
+        // intruder
+        if (intr.a > .01) {
+          if (mood === 'alert' && t - intr.last > 1100) { intr.last = t; alarms.push({ r: 0 }); }
+          for (let i = alarms.length - 1; i >= 0; i--) {
+            const al = alarms[i]; al.r += 1.6; const a = 1 - al.r / 90;
+            if (a <= 0) { alarms.splice(i, 1); continue; }
+            ctx.strokeStyle = rgba(C.red, .55 * a * intr.a); ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(ix, iy, 8 + al.r, 0, 6.283); ctx.stroke();
+          }
+          const pulse = (Math.sin(t * .006) + 1) / 2;
+          for (let k = 1; k <= 3; k++) {
+            ctx.strokeStyle = rgba(intr.col, (.35 - k * .09) * intr.a); ctx.lineWidth = 1.5;
+            ctx.beginPath(); ctx.arc(ix, iy, 10 + k * 10 + pulse * 6, 0, 6.283); ctx.stroke();
+          }
+          ctx.fillStyle = rgba(intr.col, .85 * intr.a);
+          ctx.beginPath(); ctx.arc(ix, iy, 7, 0, 6.283); ctx.fill();
+        }
+        // router hub
+        const hc = m.ring, g = ctx.createRadialGradient(hub.x, hub.y, 0, hub.x, hub.y, 160);
+        g.addColorStop(0, rgba(hc, .22)); g.addColorStop(1, rgba(hc, 0));
+        ctx.fillStyle = g; ctx.fillRect(hub.x - 160, hub.y - 160, 320, 320);
+        ctx.strokeStyle = rgba(hc, .6); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(hub.x, hub.y, 14, 0, 6.283); ctx.stroke();
+        const ang = t * .0012; ctx.strokeStyle = rgba(hc, .35); ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(hub.x, hub.y, 26, ang, ang + 1.4); ctx.stroke();
+        ctx.fillStyle = rgba(hc, .9); ctx.beginPath(); ctx.arc(hub.x, hub.y, 5, 0, 6.283); ctx.fill();
+      }
+    };
+  },
+
+  /* ---------------- BLUEPRINT (UML) ---------------- */
+  blueprint(ctx) {
+    let ovals = [];
+    return {
+      resize() {
+        ovals = Array.from({ length: 9 }, () => ({
+          x: rand(0, W), y: rand(0, H), vx: rand(-.25, .25), vy: rand(-.18, .18),
+          rx: rand(60, 110), c: Math.random() < .6 ? C.green : C.grey
+        }));
+      },
+      draw(t) {
+        ctx.clearRect(0, 0, W, H);
+        const off = (t * .012) % 40, offM = (t * .012) % 200;
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = rgba(C.blue, .035);
+        ctx.beginPath();
+        for (let x = -40 + off; x < W; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+        for (let y = -40 + off; y < H; y += 40) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+        ctx.stroke();
+        ctx.strokeStyle = rgba(C.blue, .08);
+        ctx.beginPath();
+        for (let x = -200 + offM; x < W; x += 200) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+        for (let y = -200 + offM; y < H; y += 200) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+        ctx.stroke();
+        // floating "use case" ovals linked with dashed include/extend lines
+        for (const o of ovals) {
+          o.x += o.vx; o.y += o.vy;
+          if (o.x < -120) o.x = W + 120; if (o.x > W + 120) o.x = -120;
+          if (o.y < -60) o.y = H + 60; if (o.y > H + 60) o.y = -60;
+        }
+        ctx.setLineDash([6, 8]); ctx.lineDashOffset = -t * .02;
+        for (let i = 0; i < ovals.length; i++) for (let j = i + 1; j < ovals.length; j++) {
+          const a = ovals[i], b = ovals[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+          if (d < 420) {
+            ctx.strokeStyle = rgba(C.blue, .14 * (1 - d / 420));
+            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+          }
+        }
+        ctx.setLineDash([]);
+        for (const o of ovals) {
+          ctx.fillStyle = rgba(o.c, .05); ctx.strokeStyle = rgba(o.c, .28); ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.ellipse(o.x, o.y, o.rx, o.rx * .36, 0, 0, 6.283); ctx.fill(); ctx.stroke();
+        }
+      }
+    };
+  },
+
+  /* ---------------- WI-FI WAVES ---------------- */
+  wifi(ctx) {
+    let emitters = [], waves = [], dots = [];
+    return {
+      resize() {
+        emitters = [{ rx: .5, ry: .95, big: true, every: 1000, last: 0 }];
+        for (let i = 0; i < 3; i++) emitters.push({ rx: rand(.08, .92), ry: rand(.15, .85), big: false, every: rand(1600, 2600), last: rand(0, 2000) });
+        dots = Array.from({ length: 40 }, () => ({ x: rand(0, W), y: rand(0, H), f: 0 }));
+      },
+      config(slide) {
+        const [x, y] = (slide.dataset.hub || '.5,.95').split(',').map(Number);
+        emitters[0].rx = x; emitters[0].ry = y;
+      },
+      draw(t) {
+        ctx.clearRect(0, 0, W, H);
+        for (const e of emitters) if (t - e.last > e.every) { e.last = t; waves.push({ e, r: 0 }); }
+        ctx.lineCap = 'round';
+        for (let i = waves.length - 1; i >= 0; i--) {
+          const w = waves[i], ex = w.e.rx * W, ey = w.e.ry * H, maxR = w.e.big ? Math.max(W, H) * .9 : 340;
+          const prev = w.r; w.r += w.e.big ? 4 : 2.2;
+          const a = 1 - w.r / maxR;
+          if (a <= 0) { waves.splice(i, 1); continue; }
+          const c = w.e.big ? C.lime : C.green;
+          // Wi-Fi fan (upward arc) + very faint full circle
+          ctx.strokeStyle = rgba(c, (w.e.big ? .32 : .3) * a); ctx.lineWidth = w.e.big ? 4 : 2.5;
+          ctx.beginPath(); ctx.arc(ex, ey, w.r, -Math.PI * .78, -Math.PI * .22); ctx.stroke();
+          ctx.strokeStyle = rgba(c, .05 * a); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(ex, ey, w.r, 0, 6.283); ctx.stroke();
+          for (const d of dots) { const dd = Math.hypot(d.x - ex, d.y - ey); if (dd > prev && dd <= w.r) d.f = 1; }
+        }
+        for (const d of dots) {
+          d.f *= .95;
+          ctx.fillStyle = rgba(C.lime, .15 + d.f * .6);
+          ctx.beginPath(); ctx.arc(d.x, d.y, 2 + d.f * 2, 0, 6.283); ctx.fill();
+        }
+        for (const e of emitters) {
+          const ex = e.rx * W, ey = e.ry * H, r = e.big ? 10 : 5;
+          ctx.fillStyle = rgba(e.big ? C.lime : C.green, .8);
+          ctx.beginPath(); ctx.arc(ex, ey, r, 0, 6.283); ctx.fill();
+        }
+      }
+    };
+  },
+
+  /* ---------------- TRAFFIC CHARTS ---------------- */
+  traffic(ctx) {
+    const STEP = 6; let lines = [], off = 0;
+    return {
+      resize() {
+        const n = Math.ceil(W / STEP) + 3;
+        lines = [
+          { c: C.lime,  base: .3,  amp: 22, spike: 0, ph: 0 },
+          { c: C.blue,  base: .62, amp: 16, spike: 0, ph: 2 },
+          { c: C.green, base: .86, amp: 26, spike: 0, ph: 4 },
+        ].map(l => ({ ...l, v: Array.from({ length: n }, () => 0) }));
+      },
+      draw(t) {
+        ctx.clearRect(0, 0, W, H);
+        // moving vertical time grid
+        off += 1.2;
+        if (off >= STEP) {
+          off -= STEP;
+          for (const l of lines) {
+            if (Math.random() < .012) l.spike = rand(.5, 1.0) * H * .18;
+            l.spike *= .8;
+            const val = Math.sin(t * .0021 + l.ph) * l.amp * .6 + Math.sin(t * .0057 + l.ph * 2) * l.amp * .4 + rand(-4, 4) + l.spike;
+            l.v.shift(); l.v.push(val);
+          }
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 1;
+        const gOff = (t * .072) % 120;
+        ctx.beginPath();
+        for (let x = W - gOff; x > 0; x -= 120) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+        ctx.stroke();
+        for (const l of lines) {
+          const base = l.base * H;
+          ctx.beginPath();
+          l.v.forEach((v, i) => { const x = i * STEP - off, y = base - v; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+          ctx.strokeStyle = rgba(l.c, .5); ctx.lineWidth = 2; ctx.stroke();
+          ctx.lineTo(W, base + 60); ctx.lineTo(0, base + 60); ctx.closePath();
+          const g = ctx.createLinearGradient(0, base - 80, 0, base + 60);
+          g.addColorStop(0, rgba(l.c, .12)); g.addColorStop(1, rgba(l.c, 0));
+          ctx.fillStyle = g; ctx.fill();
+          // bright point at the newest value
+          const lx = (l.v.length - 1) * STEP - off, ly = base - l.v[l.v.length - 1];
+          ctx.fillStyle = rgba(l.c, .9); ctx.beginPath(); ctx.arc(Math.min(lx, W - 4), ly, 3.5, 0, 6.283); ctx.fill();
+        }
+      }
+    };
+  },
+
+  /* ---------------- HEARTBEAT (ECG) ---------------- */
+  ecg(ctx) {
+    let buf, head = 0, phase = 0, glow = 0, plus = [];
+    const ecgShape = p => {   // one heartbeat, p = 0..1
+      const g = (c, w, h) => h * Math.exp(-((p - c) ** 2) / (2 * w * w));
+      return g(.12, .025, .12) + g(.28, .008, -.2) + g(.31, .011, 1) + g(.34, .009, -.35) + g(.55, .04, .28);
+    };
+    return {
+      resize() {
+        buf = new Float32Array(Math.ceil(W)).fill(NaN); head = 0;
+        plus = Array.from({ length: 26 }, () => ({ x: rand(0, W), y: rand(0, H), s: rand(.15, .45), z: rand(8, 16) }));
+      },
+      draw() {
+        ctx.clearRect(0, 0, W, H);
+        const speed = 4, pxPerBeat = W / 3.2, baseY = H * .82, amp = H * .2;
+        for (let k = 0; k < speed; k++) {
+          const before = phase;
+          phase = (phase + 1 / pxPerBeat) % 1;
+          if (before < .31 && phase >= .31) glow = 1;
+          buf[head] = baseY - ecgShape(phase) * amp;
+          head = (head + 1) % buf.length;
+          for (let g = 1; g < 40; g++) buf[(head + g) % buf.length] = NaN;   // gap ahead of the line
+        }
+        glow *= .94;
+        const g = ctx.createRadialGradient(W / 2, H * .7, 0, W / 2, H * .7, Math.max(W, H) * .6);
+        g.addColorStop(0, rgba(C.green, .12 * glow)); g.addColorStop(1, rgba(C.green, 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        // floating "+" signs
+        ctx.font = '600 14px Inter, sans-serif';
+        for (const p of plus) {
+          p.y -= p.s; if (p.y < -20) { p.y = H + 20; p.x = rand(0, W); }
+          ctx.fillStyle = rgba(C.green, .12); ctx.font = `700 ${p.z}px Inter, sans-serif`; ctx.fillText('+', p.x, p.y);
+        }
+        // ECG line, fading behind the head
+        ctx.lineWidth = 2.5; ctx.lineJoin = 'round';
+        const len = buf.length, CH = 16;
+        for (let s = 0; s < len; s += CH) {
+          const age = ((head - s - CH) % len + len) % len;
+          const a = Math.max(0, 1 - age / len);
+          ctx.strokeStyle = rgba(C.green, .65 * a);
+          ctx.beginPath(); let started = false;
+          for (let x = s; x <= Math.min(s + CH, len - 1); x++) {
+            const y = buf[x];
+            if (Number.isNaN(y)) { started = false; continue; }
+            started ? ctx.lineTo(x, y) : ctx.moveTo(x, y); started = true;
+          }
+          ctx.stroke();
+        }
+        const hx = (head - 1 + len) % len, hy = buf[hx];
+        if (!Number.isNaN(hy)) {
+          const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 18);
+          hg.addColorStop(0, rgba(C.lime, .9)); hg.addColorStop(1, rgba(C.lime, 0));
+          ctx.fillStyle = hg; ctx.fillRect(hx - 18, hy - 18, 36, 36);
+        }
+      }
+    };
+  },
+
+  /* ---------------- HONEYCOMB ---------------- */
+  hexgrid(ctx, shield = false) {
+    const R = 34; let cells = [], baseImg, waves = [], lastWave = -1e9;
+    const hexPath = (c, x, y, r) => {
+      c.beginPath();
+      for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k + Math.PI / 6; c.lineTo(x + r * Math.cos(a), y + r * Math.sin(a)); }
+      c.closePath();
+    };
+    const tone = shield ? C.green : C.lime;
+    return {
+      resize() {
+        cells = [];
+        const w = Math.sqrt(3) * R, h = 1.5 * R;
+        for (let row = 0, y = 0; y < H + R; row++, y += h)
+          for (let x = (row % 2) * w / 2; x < W + w; x += w) cells.push({ x, y, g: 0 });
+        baseImg = document.createElement('canvas');
+        baseImg.width = W * dpr; baseImg.height = H * dpr;
+        const b = baseImg.getContext('2d'); b.scale(dpr, dpr);
+        b.strokeStyle = 'rgba(255,255,255,.045)'; b.lineWidth = 1;
+        for (const c of cells) { hexPath(b, c.x, c.y, R - 2); b.stroke(); }
+      },
+      draw(t) {
+        ctx.clearRect(0, 0, W, H);
+        ctx.drawImage(baseImg, 0, 0, W, H);
+        if (t - lastWave > (shield ? 3000 : 2400)) {
+          lastWave = t;
+          waves.push(shield ? { x: W / 2, y: H / 2, r: 0 } : { x: rand(0, W), y: rand(0, H), r: 0 });
+        }
+        for (let i = waves.length - 1; i >= 0; i--) {
+          const wv = waves[i], prev = wv.r; wv.r += shield ? 7 : 5;
+          if (wv.r > Math.hypot(W, H)) { waves.splice(i, 1); continue; }
+          for (const c of cells) { const d = Math.hypot(c.x - wv.x, c.y - wv.y); if (d > prev && d <= wv.r) c.g = Math.max(c.g, shield ? .7 : 1); }
+        }
+        for (let k = 0; k < 2; k++) { const c = cells[(Math.random() * cells.length) | 0]; if (c) c.g = Math.max(c.g, .5); }
+        for (const c of cells) {
+          if (c.g < .02) continue;
+          c.g *= .955;
+          hexPath(ctx, c.x, c.y, R - 3);
+          ctx.fillStyle = rgba(tone, .1 * c.g); ctx.fill();
+          ctx.strokeStyle = rgba(tone, .45 * c.g); ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        if (shield) {   // soft protective dome in the middle
+          const pr = (Math.sin(t * .0015) + 1) / 2;
+          const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.min(W, H) * (.45 + pr * .05));
+          g.addColorStop(0, rgba(C.green, 0)); g.addColorStop(.85, rgba(C.green, .05)); g.addColorStop(1, rgba(C.green, 0));
+          ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+        }
+      }
+    };
+  },
+  shield(ctx) { return MODES.hexgrid(ctx, true); },
+
+  /* ---------------- BINARY DATA RAIN ---------------- */
+  binary(ctx) {
+    const FS = 16; let drops = [];
+    const chars = '0101010110ABCDEF';
+    const words = ['192.168.1.', 'ARP', 'MAC', 'GET /api', 'PING', '200 OK', ':8000'];
+    return {
+      resize() {
+        drops = [];
+        for (let x = 8; x < W; x += 24) drops.push({ x, y: rand(-H, H), int: rand(40, 110), last: 0 });
+        ctx.clearRect(0, 0, W, H);
+      },
+      draw(t) {
+        // fade what was drawn before (keeps the canvas transparent)
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = 'rgba(0,0,0,.07)'; ctx.fillRect(0, 0, W, H);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.font = `500 ${FS}px "JetBrains Mono", monospace`;
+        for (const d of drops) {
+          if (t - d.last < d.int) continue;
+          d.last = t;
+          // previous head becomes a dim trail char
+          ctx.fillStyle = rgba(C.green, .28);
+          ctx.fillText(chars[(Math.random() * chars.length) | 0], d.x, d.y);
+          d.y += FS + 2;
+          const isWord = Math.random() < .004;
+          ctx.fillStyle = rgba(isWord ? C.orange : C.lime, isWord ? .55 : .5);
+          ctx.fillText(isWord ? words[(Math.random() * words.length) | 0] : chars[(Math.random() * chars.length) | 0], d.x, d.y);
+          if (d.y > H + 20 && Math.random() > .9) d.y = rand(-300, 0);
+        }
+      }
+    };
+  },
+};
+
+/* ---------- Two layers that cross-fade ---------- */
+function makeLayer() {
+  const c = document.createElement('canvas'); c.className = 'bg';
+  document.body.prepend(c);
+  return { c, ctx: c.getContext('2d'), mode: null, inst: null, fadeUntil: 0 };
+}
+const layers = [makeLayer(), makeLayer()];
+let front = 0;
+
+function sizeLayer(L) {
+  L.c.width = W * dpr; L.c.height = H * dpr;
+  L.c.style.width = W + 'px'; L.c.style.height = H + 'px';
+  L.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (L.inst) L.inst.resize();
+}
+
+function setBackground(slide) {
+  const mode = slide.dataset.bg || 'network';
+  const F = layers[front];
+  if (F.mode === mode) { F.inst.config?.(slide); return; }
+  const B = layers[1 - front];
+  B.mode = mode; B.inst = MODES[mode](B.ctx);
+  B.ctx.clearRect(0, 0, W, H);
+  B.inst.resize(); B.inst.config?.(slide);
+  B.c.classList.add('on'); F.c.classList.remove('on');
+  F.fadeUntil = performance.now() + 1500;
+  front = 1 - front;
+}
+
+function resize() {
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  layers.forEach(sizeLayer);
+  document.getElementById('stage').style.setProperty('--s', Math.min(W / 1600, H / 900));
+}
+
+function loop(t) {
+  mouse.sx += (mouse.x - mouse.sx) * .05; mouse.sy += (mouse.y - mouse.sy) * .05;
+  layers.forEach((L, i) => {
+    if (!L.inst) return;
+    if (i === front || t < L.fadeUntil) L.inst.draw(t);
+    else if (L.inst) { L.ctx.clearRect(0, 0, W, H); L.inst = null; L.mode = null; }
+  });
+  requestAnimationFrame(loop);
+}
+addEventListener('resize', resize);
+addEventListener('mousemove', e => { mouse.x = e.clientX / innerWidth - .5; mouse.y = e.clientY / innerHeight - .5; });
+
+/* =====================================================================
+   SLIDES
+   ===================================================================== */
+const slides = [...document.querySelectorAll('.slide')];
+const counter = document.getElementById('counter');
+const progress = document.getElementById('progress');
+let current = -1;
+
+// split titles with class "chars" into letters
+document.querySelectorAll('.chars').forEach(el => {
+  const base = parseFloat(el.style.getPropertyValue('--d')) || 0;
+  let i = 0;
+  el.innerHTML = el.textContent.split(' ').map(word =>
+    '<span style="display:inline-block;white-space:nowrap">' +
+    [...word].map(ch => `<span class="c" style="--cd:${(base + i++ * .03).toFixed(2)}s">${ch}</span>`).join('') +
+    '</span>').join(' ');
+});
+
+function show(i) {
+  i = Math.max(0, Math.min(slides.length - 1, i));
+  if (i === current) return;
+  slides.forEach((s, k) => s.classList.toggle('active', k === i));
+  current = i;
+  counter.innerHTML = `<b>${i + 1}</b> / ${slides.length}`;
+  progress.style.width = ((i + 1) / slides.length * 100) + '%';
+  history.replaceState(null, '', '#' + (i + 1));
+  setBackground(slides[i]);
+  document.querySelector('.brand').style.opacity = slides[i].dataset.bg === 'blueprint' ? 0 : '';
+}
+const next = () => show(current + 1);
+const prev = () => show(current - 1);
+
+// click any phone or the diagram to see it full size
+const zoomView = document.getElementById('zoomView');
+document.querySelectorAll('.phone, [data-zoom]').forEach(el => el.addEventListener('click', () => {
+  const src = el.dataset.zoom || el.querySelector('img').src;
+  zoomView.querySelector('img').src = src;
+  zoomView.classList.toggle('diagram-mode', !!el.dataset.zoom);
+  zoomView.classList.add('open');
+}));
+zoomView.addEventListener('click', () => zoomView.classList.remove('open'));
+
+document.addEventListener('keydown', e => {
+  if (zoomView.classList.contains('open')) { if (e.key === 'Escape' || e.key === ' ') zoomView.classList.remove('open'); return; }
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); next(); }
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); prev(); }
+  else if (e.key === 'Home') show(0);
+  else if (e.key === 'End') show(slides.length - 1);
+  else if (e.key.toLowerCase() === 'f') {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+    else document.exitFullscreen?.();
+  }
+});
+document.getElementById('next').addEventListener('click', next);
+document.getElementById('prev').addEventListener('click', prev);
+
+let touchX = null;
+document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+document.addEventListener('touchend', e => {
+  if (touchX === null) return;
+  const dx = e.changedTouches[0].clientX - touchX;
+  if (Math.abs(dx) > 50) (dx < 0 ? next : prev)();
+  touchX = null;
+});
+
+/* ---------- start ---------- */
+resize();
+const startAt = parseInt(location.hash.slice(1), 10) - 1;
+show(Number.isNaN(startAt) ? 0 : startAt);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
